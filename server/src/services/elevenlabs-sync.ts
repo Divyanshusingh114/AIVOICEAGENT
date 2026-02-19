@@ -1,5 +1,5 @@
 import { getDb } from './db.js';
-import { getAgentApiKey } from './agent-keys.js';
+import { getAgentApiKey, getApiKeyByElevenLabsId } from './agent-keys.js';
 import { broadcastCallEvent } from '../websocket/call-events.js';
 
 const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1';
@@ -18,10 +18,22 @@ export interface ElevenLabsSyncResult {
  */
 export async function syncCallFromElevenLabs(
   conversationId: string,
-  agentId?: string | null
+  agentId?: string | null,
+  elevenLabsAgentId?: string | null
 ): Promise<ElevenLabsSyncResult> {
-  const apiKey = getAgentApiKey(agentId);
-  if (!apiKey) return { success: false };
+  let apiKey = getAgentApiKey(agentId);
+  if (!apiKey && elevenLabsAgentId) {
+    apiKey = getApiKeyByElevenLabsId(elevenLabsAgentId);
+    if (apiKey) {
+      console.log(`[EL-Sync] Resolved API key using ElevenLabs Agent ID: ${elevenLabsAgentId}`);
+    }
+  }
+  if (!apiKey) {
+    console.warn(`[EL-Sync] No API key found for agentId: ${agentId}`);
+    return { success: false };
+  }
+  const maskedKey = apiKey.substring(0, 4) + '...' + apiKey.substring(apiKey.length - 4);
+  console.log(`[EL-Sync] Syncing ${conversationId} (AgentId: ${agentId || 'default'}, Key: ${maskedKey})`);
 
   try {
     const response = await fetch(
@@ -86,12 +98,13 @@ export async function syncCallFromElevenLabs(
 export function syncCallWithRetries(
   conversationId: string,
   agentId?: string | null,
+  elevenLabsAgentId?: string | null,
   maxAttempts = 3,
   initialDelayMs = 10000
 ) {
   const attempt = async (n: number) => {
     console.log(`[EL-Sync] Attempt ${n}/${maxAttempts} for ${conversationId}`);
-    const result = await syncCallFromElevenLabs(conversationId, agentId);
+    const result = await syncCallFromElevenLabs(conversationId, agentId, elevenLabsAgentId);
 
     if (!result.success && n < maxAttempts) {
       setTimeout(() => attempt(n + 1), initialDelayMs * n);

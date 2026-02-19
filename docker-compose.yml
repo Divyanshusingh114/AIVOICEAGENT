@@ -10,10 +10,10 @@ services:
     container_name: kredmint-ai-voiceagent
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3000:5173"
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=5173
       - DB_PATH=/data/prod.db
       - NGROK_URL=${NGROK_URL}
       - GEMINI_API_KEY=${GEMINI_API_KEY}

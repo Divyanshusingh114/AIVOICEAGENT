@@ -17,6 +17,7 @@ export function handleTwilioConnection(twilioWs: WebSocket, agentId?: string, in
   let callSid: string | null = initialCallUuid || null;
   let elevenLabsWs: WebSocket | null = null;
   let provider: 'twilio' | 'plivo' = initialProvider;
+  let usedElAgentId: string | null = null;
 
   // Accumulate transcript entries during the call
   const transcriptEntries: TranscriptEntry[] = [];
@@ -65,9 +66,14 @@ export function handleTwilioConnection(twilioWs: WebSocket, agentId?: string, in
         if (activeCall.elevenLabsAgentId) {
           elAgentId = activeCall.elevenLabsAgentId;
         }
+        if (activeCall.agentId && !agentId) {
+          agentId = activeCall.agentId;
+        }
       }
+
     }
 
+    usedElAgentId = elAgentId;
     console.log(`[Stream] Connecting ElevenLabs (Agent: ${elAgentId})`);
     elevenLabsWs = connectToElevenLabs(elAgentId, apiKey);
     setupElevenLabsHandlers(elevenLabsWs, twilioWs, currentStreamSid, currentCallSid, transcriptEntries, (convId) => {
@@ -96,11 +102,16 @@ export function handleTwilioConnection(twilioWs: WebSocket, agentId?: string, in
   }
 
   twilioWs.on('message', (data: any, isBinary: boolean) => {
+    // console.log(`[Stream] Message received: ${isBinary ? 'Binary Audio' : 'Text JSON'}`);
     if (isBinary) {
       if (elevenLabsWs?.readyState === WebSocket.OPEN) {
         elevenLabsWs.send(JSON.stringify({
           user_audio_chunk: data.toString('base64')
         }));
+      } else {
+        // Warn if audio is arriving but ElevenLabs is not connected
+        if (!elevenLabsWs) console.warn('[Stream] Audio received but ElevenLabs not initialized');
+        else if (elevenLabsWs.readyState !== WebSocket.OPEN) console.warn(`[Stream] Audio received but ElevenLabs not open (State: ${elevenLabsWs.readyState})`);
       }
       return;
     }
@@ -145,6 +156,7 @@ export function handleTwilioConnection(twilioWs: WebSocket, agentId?: string, in
           provider = inboundProvider as 'twilio' | 'plivo';
 
           console.log(`[Stream] Start processing - Provider: ${provider}, StreamSid: ${streamSid}, CallSid: ${callSid}`);
+          console.log(`[Stream] Inbound Params - AgentId: ${inboundAgentId}, From: ${inboundFrom}`);
 
           const apiKey = getAgentApiKey(inboundAgentId) || process.env.ELEVENLABS_API_KEY!;
           let elId = process.env.ELEVENLABS_AGENT_ID!;
@@ -156,6 +168,9 @@ export function handleTwilioConnection(twilioWs: WebSocket, agentId?: string, in
             if (agent?.elevenLabsId) elId = agent.elevenLabsId;
           }
 
+
+
+          usedElAgentId = elId;
           initiateElevenLabs(elId, apiKey, callSid, streamSid!, inboundFrom);
           break;
 
@@ -170,7 +185,7 @@ export function handleTwilioConnection(twilioWs: WebSocket, agentId?: string, in
         case 'stop':
           console.log(`[Stream] Stop event: ${callSid}`);
           elevenLabsWs?.close();
-          saveCallData(callSid, transcriptEntries, elevenLabsConversationId, agentId);
+          saveCallData(callSid, transcriptEntries, elevenLabsConversationId, agentId, usedElAgentId);
           break;
       }
     } catch (err) {
@@ -181,7 +196,7 @@ export function handleTwilioConnection(twilioWs: WebSocket, agentId?: string, in
   twilioWs.on('close', (code, reason) => {
     console.log(`[Stream] WebSocket closed: ${callSid}, Code: ${code}, Reason: ${reason}`);
     elevenLabsWs?.close();
-    saveCallData(callSid, transcriptEntries, elevenLabsConversationId, agentId);
+    saveCallData(callSid, transcriptEntries, elevenLabsConversationId, agentId, usedElAgentId);
 
     // For Plivo calls, explicitly hang up to ensure proper completion and status callbacks
     if (provider === 'plivo' && callSid) {
@@ -220,7 +235,8 @@ function saveCallData(
   callSid: string | null,
   transcriptEntries: TranscriptEntry[],
   elevenLabsConversationId: string | null,
-  agentId?: string
+  agentId?: string,
+  elevenLabsAgentId?: string | null
 ) {
   if (!callSid) return;
 
@@ -242,7 +258,7 @@ function saveCallData(
     console.log(`ElevenLabs conversation ID saved for ${callSid}: ${elevenLabsConversationId}`);
 
     // Sync accurate data from ElevenLabs (duration, status) with retries
-    syncCallWithRetries(elevenLabsConversationId, agentId);
+    syncCallWithRetries(elevenLabsConversationId, agentId, elevenLabsAgentId);
   }
 }
 
