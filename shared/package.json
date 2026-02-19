@@ -1,0 +1,9 @@
+{
+  "name": "shared",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "types.ts",
+  "scripts": {
+    "build": "echo 'No build step for shared'"
+  }
+}
