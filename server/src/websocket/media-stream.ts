@@ -390,7 +390,11 @@ function setupElevenLabsHandlers(
     console.error('ElevenLabs error:', error);
   });
 
-  elevenLabsWs.on('close', () => {
-    console.log('ElevenLabs disconnected');
+  elevenLabsWs.on('close', (code, reason) => {
+    console.log(`ElevenLabs disconnected. Code: ${code}, Reason: ${reason}`);
+  });
+
+  elevenLabsWs.on('error', (error) => {
+    console.error('ElevenLabs WebSocket Error:', error);
   });
 }
